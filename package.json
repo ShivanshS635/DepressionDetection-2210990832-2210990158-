@@ -1,0 +1,11 @@
+{
+  "name": "depression-detection-engine-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install-all": "npm install --prefix SourceCode/backend-node && npm install --prefix SourceCode/frontend",
+    "start-backend": "npm start --prefix SourceCode/backend-node",
+    "start-frontend": "npm run dev --prefix SourceCode/frontend",
+    "build-frontend": "npm run build --prefix SourceCode/frontend"
+  }
+}
