@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 
 const MODEL_DIR = path.resolve(__dirname, '../../model-onnx');
-const ONNX_FILE = path.join(MODEL_DIR, 'onnx', 'model.onnx');
+const ONNX_FILE = path.join(MODEL_DIR, 'onnx', 'model_quantized.onnx');
 
 function isLfsPointer(filePath) {
     try {
@@ -44,7 +44,7 @@ async function getClassifier() {
     if (classifier === null) {
         console.log(`Loading Node.js ONNX DistilBERT Model from: ${MODEL_DIR}`);
         classifier = await pipeline('text-classification', MODEL_DIR, {
-            model_file_name: 'model',
+            model_file_name: 'model_quantized',
             quantized: false
         });
     }
