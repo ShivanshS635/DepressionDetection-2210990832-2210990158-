@@ -1,8 +1,9 @@
-const axios = require('axios');
+const { pipeline, env } = require('@xenova/transformers');
 
-const HF_MODEL_ID = process.env.HF_MODEL_ID || 'YOUR_USERNAME/depression-distilbert-onnx';
-const HF_API_TOKEN = process.env.HF_API_TOKEN;
-const HF_API_URL = `https://api-inference.huggingface.co/models/${HF_MODEL_ID}`;
+env.allowRemoteModels = true;
+env.allowLocalModels = false;
+
+const HF_MODEL_ID = process.env.HF_MODEL_ID || 'snortdapot/depression-distilbert-onnx';
 
 const ID_TO_LABEL = { 0: "Normal", 1: "Mild", 2: "Severe" };
 const LABEL_TO_RISK = { "Normal": 0.15, "Mild": 0.55, "Severe": 0.95 };
@@ -14,6 +15,29 @@ const DEPRESSION_KEYWORDS = new Set([
     "nobody", "never", "nothing", "stress", "stressed", "hate", "useless",
     "burden", "lost", "fail", "failure", "broken", "numb", "quit"
 ]);
+
+let classifier = null;
+
+async function getClassifier() {
+    if (classifier === null) {
+        console.log(`[model] Downloading model from HuggingFace: ${HF_MODEL_ID}`);
+        console.log(`[model] Memory before load: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB RSS`);
+        const loadStart = Date.now();
+        try {
+            classifier = await pipeline('text-classification', HF_MODEL_ID, {
+                model_file_name: 'model_quantized',
+                quantized: false
+            });
+            console.log(`[model] Loaded in ${Date.now() - loadStart}ms`);
+            console.log(`[model] Memory after load: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB RSS`);
+        } catch (e) {
+            console.error(`[model] FAILED to load: ${e.message}`);
+            console.error(`[model] Stack: ${e.stack}`);
+            throw e;
+        }
+    }
+    return classifier;
+}
 
 function getKeywordImportance(text, topK = 5) {
     const tokens = text.toLowerCase().split(/[\s.,!?;:]+/).filter(t => t.length > 0);
@@ -30,56 +54,14 @@ function cleanText(text) {
     return text.toLowerCase().trim();
 }
 
-async function queryHuggingFace(text) {
-    const response = await axios.post(
-        HF_API_URL,
-        { inputs: text },
-        {
-            headers: {
-                'Authorization': `Bearer ${HF_API_TOKEN}`,
-                'Content-Type': 'application/json'
-            }
-        }
-    );
-    return response.data;
-}
-
 async function predictComment(text) {
+    const pipe = await getClassifier();
     const processed = cleanText(text);
 
-    let attempts = 0;
-    let output;
+    const output = await pipe(processed);
 
-    while (attempts < 3) {
-        try {
-            output = await queryHuggingFace(processed);
-            if (output.error && output.error.includes('loading')) {
-                console.log('Model is loading on HuggingFace, retrying in 10s...');
-                await new Promise(r => setTimeout(r, 10000));
-                attempts++;
-                continue;
-            }
-            break;
-        } catch (e) {
-            if (e.response && e.response.status === 503) {
-                console.log('Model is loading on HuggingFace, retrying in 10s...');
-                await new Promise(r => setTimeout(r, 10000));
-                attempts++;
-            } else {
-                throw new Error(`HuggingFace API error: ${e.message}`);
-            }
-        }
-    }
-
-    if (!output || output.error) {
-        throw new Error(`HuggingFace inference failed: ${JSON.stringify(output)}`);
-    }
-
-    const predictions = Array.isArray(output[0]) ? output[0] : output;
-    const topPrediction = predictions.reduce((a, b) => a.score > b.score ? a : b);
-
-    const label = topPrediction.label;
-    const confidence = topPrediction.score;
+    const label = output[0].label;
+    const confidence = output[0].score;
 
     let finalLabel = label;
     if (label.startsWith("LABEL_")) {
