@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -e
 
-echo "=== Installing Git LFS ==="
-curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash
-apt-get install -y git-lfs
-git lfs install
-git lfs pull
+echo "=== Installing Git LFS (standalone binary) ==="
+curl -sL https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz -o git-lfs.tar.gz
+tar -xzf git-lfs.tar.gz
+mv git-lfs-3.5.1/git-lfs ./git-lfs-bin
+rm -rf git-lfs.tar.gz git-lfs-3.5.1
+./git-lfs-bin install
+./git-lfs-bin pull
 
 echo "=== Installing backend dependencies ==="
 cd SourceCode/backend-node

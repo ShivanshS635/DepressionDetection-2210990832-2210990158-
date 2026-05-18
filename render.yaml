@@ -2,13 +2,7 @@ services:
   - type: web
     name: depressiondetection-2210990832-2210990158
     runtime: node
-    buildCommand: |
-      curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash &&
-      apt-get install -y git-lfs &&
-      git lfs install &&
-      git lfs pull &&
-      cd SourceCode/backend-node &&
-      npm install
+    buildCommand: chmod +x build.sh && ./build.sh
     startCommand: cd SourceCode/backend-node && node server.js
     envVars:
       - key: NODE_ENV
