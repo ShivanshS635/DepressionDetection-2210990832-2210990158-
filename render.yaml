@@ -2,8 +2,13 @@ services:
   - type: web
     name: depressiondetection-2210990832-2210990158
     runtime: node
-    buildCommand: chmod +x build.sh && ./build.sh
-    startCommand: cd SourceCode/backend-node && node server.js
+    rootDir: SourceCode/backend-node
+    buildCommand: npm install
+    startCommand: node server.js
     envVars:
       - key: NODE_ENV
         value: production
+      - key: HF_MODEL_ID
+        sync: false
+      - key: HF_API_TOKEN
+        sync: false
