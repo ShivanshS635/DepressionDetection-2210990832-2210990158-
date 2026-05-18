@@ -1,11 +1,7 @@
-const { pipeline, env } = require('@xenova/transformers');
+const axios = require('axios');
 
-env.allowRemoteModels = true;
-env.allowLocalModels = false;
+const HF_SPACE_URL = process.env.HF_SPACE_URL || 'https://snortdapot-depression-classifier.hf.space';
 
-const HF_MODEL_ID = process.env.HF_MODEL_ID || 'snortdapot/depression-distilbert-onnx';
-
-const ID_TO_LABEL = { 0: "Normal", 1: "Mild", 2: "Severe" };
 const LABEL_TO_RISK = { "Normal": 0.15, "Mild": 0.55, "Severe": 0.95 };
 
 const DEPRESSION_KEYWORDS = new Set([
@@ -16,27 +12,42 @@ const DEPRESSION_KEYWORDS = new Set([
     "burden", "lost", "fail", "failure", "broken", "numb", "quit"
 ]);
 
-let classifier = null;
-
-async function getClassifier() {
-    if (classifier === null) {
-        console.log(`[model] Downloading model from HuggingFace: ${HF_MODEL_ID}`);
-        console.log(`[model] Memory before load: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB RSS`);
-        const loadStart = Date.now();
+async function querySpace(text, retries = 3) {
+    for (let attempt = 0; attempt < retries; attempt++) {
         try {
-            classifier = await pipeline('text-classification', HF_MODEL_ID, {
-                model_file_name: 'model_quantized',
-                quantized: false
-            });
-            console.log(`[model] Loaded in ${Date.now() - loadStart}ms`);
-            console.log(`[model] Memory after load: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB RSS`);
-        } catch (e) {
-            console.error(`[model] FAILED to load: ${e.message}`);
-            console.error(`[model] Stack: ${e.stack}`);
-            throw e;
+            // Step 1: Submit the prediction request
+            const submitRes = await axios.post(
+                `${HF_SPACE_URL}/gradio_api/call/classify`,
+                { data: [text] },
+                { timeout: 30000 }
+            );
+            const eventId = submitRes.data.event_id;
+
+            // Step 2: Fetch the result (SSE stream)
+            const resultRes = await axios.get(
+                `${HF_SPACE_URL}/gradio_api/call/classify/${eventId}`,
+                { timeout: 120000 }
+            );
+
+            // Parse SSE response: find the "data:" line after "event: complete"
+            const lines = resultRes.data.split('\n');
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].startsWith('event: complete') && i + 1 < lines.length) {
+                    const dataLine = lines[i + 1].replace(/^data: /, '');
+                    return JSON.parse(dataLine);
+                }
+            }
+            throw new Error('No complete event in Space response');
+        } catch (err) {
+            if (err.response && err.response.status === 503) {
+                console.log(`[model] Space is sleeping, waiting 15s (attempt ${attempt + 1}/${retries})...`);
+                await new Promise(r => setTimeout(r, 15000));
+                continue;
+            }
+            if (attempt === retries - 1) throw err;
+            await new Promise(r => setTimeout(r, 3000));
         }
     }
-    return classifier;
 }
 
 function getKeywordImportance(text, topK = 5) {
@@ -55,26 +66,20 @@ function cleanText(text) {
 }
 
 async function predictComment(text) {
-    const pipe = await getClassifier();
     const processed = cleanText(text);
+    const result = await querySpace(processed);
 
-    const output = await pipe(processed);
+    // result is [{label, confidences: [{label, confidence}, ...]}]
+    const prediction = result[0];
+    const bestLabel = prediction.label;
+    const bestConfidence = prediction.confidences.find(c => c.label === bestLabel)?.confidence || 0;
 
-    const label = output[0].label;
-    const confidence = output[0].score;
-
-    let finalLabel = label;
-    if (label.startsWith("LABEL_")) {
-        const id = parseInt(label.replace("LABEL_", ""));
-        finalLabel = ID_TO_LABEL[id];
-    }
-
-    const riskScore = (LABEL_TO_RISK[finalLabel] || 0) * confidence;
+    const riskScore = (LABEL_TO_RISK[bestLabel] || 0) * bestConfidence;
     const topTokens = getKeywordImportance(processed);
 
     return {
-        label: finalLabel,
-        confidence: parseFloat(confidence.toFixed(4)),
+        label: bestLabel,
+        confidence: parseFloat(bestConfidence.toFixed(4)),
         risk_score: parseFloat(riskScore.toFixed(4)),
         top_tokens: topTokens,
         comment: text
