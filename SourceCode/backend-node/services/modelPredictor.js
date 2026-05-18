@@ -1,10 +1,31 @@
 const { pipeline, env } = require('@xenova/transformers');
 const path = require('path');
+const fs = require('fs');
 
-// Disable remote loading, always use local files
-env.allowRemoteModels = false;
-env.localModelPath = '/'; 
 const MODEL_DIR = path.resolve(__dirname, '../../model-onnx');
+const ONNX_FILE = path.join(MODEL_DIR, 'onnx', 'model.onnx');
+
+function isLfsPointer(filePath) {
+    try {
+        const buf = fs.readFileSync(filePath, { encoding: 'utf8', flag: 'r' });
+        return buf.startsWith('version https://git-lfs.github.com');
+    } catch {
+        return true;
+    }
+}
+
+const localModelAvailable = fs.existsSync(ONNX_FILE) && !isLfsPointer(ONNX_FILE);
+
+if (localModelAvailable) {
+    env.allowRemoteModels = false;
+    env.localModelPath = '/';
+    console.log('Using local ONNX model from:', MODEL_DIR);
+} else {
+    env.allowRemoteModels = false;
+    console.error('ERROR: Local ONNX model not available at:', ONNX_FILE);
+    console.error('The file is either missing or is a Git LFS pointer.');
+    console.error('Run: git lfs install && git lfs pull');
+}
 
 const ID_TO_LABEL = { 0: "Normal", 1: "Mild", 2: "Severe" };
 const LABEL_TO_RISK = { "Normal": 0.15, "Mild": 0.55, "Severe": 0.95 };
