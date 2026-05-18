@@ -6,7 +6,7 @@ curl -sL https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-lin
 tar -xzf git-lfs.tar.gz
 mv git-lfs-3.5.1/git-lfs ./git-lfs-bin
 rm -rf git-lfs.tar.gz git-lfs-3.5.1
-./git-lfs-bin install
+./git-lfs-bin install --force
 ./git-lfs-bin pull
 
 echo "=== Installing backend dependencies ==="
